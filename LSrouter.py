@@ -80,18 +80,32 @@ class LSrouter(Router):
 
     def handle_remove_link(self, port):
         """Handle removed link."""
-        # TODO
-        #   update local data structures and forwarding table
-        #   broadcast the new link state of this router to all neighbors
-        pass
+        # Xóa liên kết khỏi neighbors và ports_to_neighbors
+        if port in self.neighbors:
+            endpoint, _ = self.neighbors[port]
+            del self.neighbors[port]
+            if endpoint in self.ports_to_neighbors:
+                del self.ports_to_neighbors[endpoint]
+        
+        # Cập nhật LSDB của router này
+        self.lsdb[self.addr] = {
+            "seq": self.seq,
+            "links": {n: c for _, (n, c) in self.neighbors.items()}
+        }
+        self.seq += 1  # Tăng sequence number để đánh dấu LSA mới
+        
+        # Gửi LSA mới đến các neighbor
+        self.flood_own_lsa()
+        
+        # Tính lại bảng định tuyến
+        self.run_dijkstra()
 
     def handle_time(self, time_ms):
         """Handle current time."""
         if time_ms - self.last_time >= self.heartbeat_time:
             self.last_time = time_ms
-            # TODO
-            #   broadcast the link state of this router to all neighbors
-            pass
+            # Gửi lại LSA của router này đến các neighbor
+            self.flood_own_lsa()
 
     def __repr__(self):
         """Representation for debugging in the network visualizer."""
@@ -139,8 +153,8 @@ class LSrouter(Router):
                 continue
             # truy ngược đường đi để tìm next hop
             next_hop = dest
-            while prev[next_hop] != self.addr:
-                next_hop = prev[next_hop]
+            while prev.get(next_hop) != self.addr:
+                next_hop = prev.get(next_hop, next_hop)
             # ánh xạ next_hop → port
             if next_hop in self.ports_to_neighbors:
                 port = self.ports_to_neighbors[next_hop]
